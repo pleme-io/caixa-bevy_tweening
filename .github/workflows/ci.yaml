@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  # Run on pull requests (PR)
+  pull_request:
+    types:
+    # New PR
+    - opened
+    # Change pushed to source branch
+    - synchronize
+    # PR reopened
+    - reopened
+    # PR converted from Draft to Ready For Review
+    - ready_for_review
+  # Run on any new change on the main branch (CI)
+  push:
+    branches:
+      - main
+  # Enable manual trigger via GitHub UI
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        toolchain: [stable, nightly]
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-build-${{ matrix.toolchain }}-${{ hashFiles('**/Cargo.toml') }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+          override: true
+      - name: Install Bevy dependencies
+        run: sudo apt-get update; sudo apt-get install --no-install-recommends libasound2-dev libudev-dev
+        if: runner.os == 'linux'
+      - name: Build & run tests (slim)
+        run: cargo test --no-default-features
+        env:
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - name: Build & run tests (ui)
+        run: cargo test --no-default-features --features="bevy_ui"
+        env:
+          CARGO_INCREMENTAL: 1
+          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - name: Build & run tests (sprite)
+        run: cargo test --no-default-features --features="bevy_sprite"
+        env:
+          CARGO_INCREMENTAL: 1
+          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - name: Build & run tests (text)
+        run: cargo test --no-default-features --features="bevy_text"
+        env:
+          CARGO_INCREMENTAL: 1
+          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+      - name: Build & run tests (all)
+        run: cargo test --all-features
+        env:
+          CARGO_INCREMENTAL: 1
+          RUSTFLAGS: "-C debuginfo=0 -D warnings"
+
+  coverage:
+    name: Coverage
+    runs-on: macos-14
+    permissions:
+      actions: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-build-stable-${{ hashFiles('**/Cargo.toml') }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install cargo-tarpaulin
+        run: |
+          RUST_BACKTRACE=1 cargo install --version 0.31.2 cargo-tarpaulin
+      - name: Generate code coverage
+        run: |
+          RUST_BACKTRACE=1 cargo tarpaulin --engine llvm --verbose --timeout 120 --out Lcov --workspace --all-features
+          ls -la
+      - name: Upload code coverage
+        uses: coverallsapp/github-action@master
+        with:
+          path-to-lcov: 'lcov.info'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
