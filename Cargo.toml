@@ -1,6 +1,6 @@
 [package]
 name = "bevy_tweening"
-version = "0.15.0"
+version = "0.15.1"
 authors = [
     "François Mockers <mockersf@gmail.com>",
     "Jerome Humbert <djeedai@gmail.com>",
